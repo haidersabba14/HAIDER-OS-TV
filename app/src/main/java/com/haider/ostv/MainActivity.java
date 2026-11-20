@@ -2,7 +2,8 @@ package com.haider.ostv;
 import android.app.*;import android.os.*;import android.content.*;import android.content.pm.*;import android.graphics.Color;import android.graphics.drawable.GradientDrawable;import android.graphics.drawable.Drawable;import android.graphics.Typeface;import android.view.animation.DecelerateInterpolator;import android.net.Uri;import android.net.wifi.WifiManager;import android.provider.Settings;import android.view.*;import android.widget.*;import java.io.*;import java.net.*;import java.security.SecureRandom;import java.util.*;
 public class MainActivity extends Activity {
   ArrayList<ArrayList<View>> navRows=new ArrayList<ArrayList<View>>(); int navRow=0,navCol=0; LinearLayout list; ServerSocket listener; volatile boolean enabled=false; String pin; String page=""; int failedAttempts=0; long lockUntil=0L; final int GOLD=Color.rgb(229,181,76);
-  @Override public void onCreate(Bundle b){super.onCreate(b);pin=String.format(Locale.US,"%06d",new SecureRandom().nextInt(1000000));setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);home();}
+  @Override public void onCreate(Bundle b){super.onCreate(b);pin=String.format(Locale.US,"%06d",new SecureRandom().nextInt(1000000));setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);home();
+    if(getPreferences(MODE_PRIVATE).getBoolean("show_input_at_start",false))new Handler().postDelayed(()->openVendorInput(),800);}
 
   final int BG=Color.rgb(12,10,11), PANEL=Color.rgb(34,27,25), MUTED=Color.rgb(189,164,137);
   int dp(float v){return (int)(getResources().getDisplayMetrics().density*v+0.5f);}
@@ -80,7 +81,11 @@ public class MainActivity extends Activity {
       if((r.activityInfo.applicationInfo.flags & 0x02000000)!=0)continue;
       visible.add(r);
     }
+    final java.util.List<String> saved=storedOrder();
     Collections.sort(visible,new Comparator<ResolveInfo>(){public int compare(ResolveInfo x,ResolveInfo y){
+      int ax=saved.indexOf(x.activityInfo.packageName),by=saved.indexOf(y.activityInfo.packageName);
+      if(ax>=0&&by>=0)return Integer.compare(ax,by);
+      if(ax>=0)return -1;if(by>=0)return 1;
       return String.valueOf(x.loadLabel(pm)).compareToIgnoreCase(String.valueOf(y.loadLabel(pm)));
     }});
     return visible;
@@ -181,6 +186,8 @@ public class MainActivity extends Activity {
     tools.addView(dockTile("الإعدادات",symbol(android.R.drawable.ic_menu_preferences),this::settings));
     tools.addView(dockTile("ريموت الجوال",symbol(android.R.drawable.ic_menu_call),this::remote));
     tools.addView(dockTile("فحص الجهاز",symbol(android.R.drawable.ic_menu_info_details),this::diagnostics));
+    tools.addView(dockTile("ترتيب التطبيقات",symbol(android.R.drawable.ic_menu_sort_by_size),this::arrangeApps));
+    tools.addView(dockTile("HDMI / INPUT",symbol(android.R.drawable.ic_menu_slideshow),this::inputSources));
     body.addView(tools);scroll.addView(body);
     root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
     scroll.post(()->{if(dock.getChildCount()>0)dock.getChildAt(0).requestFocus();});
@@ -239,8 +246,62 @@ public class MainActivity extends Activity {
     }
     return super.onKeyDown(keyCode,event);
   }
+
+  java.util.List<String> storedOrder(){
+    String saved=getPreferences(MODE_PRIVATE).getString("app_order","");
+    java.util.List<String> names=new ArrayList<String>();
+    if(!saved.isEmpty())for(String p:saved.split(","))if(!p.isEmpty())names.add(p);
+    return names;
+  }
+  void moveApp(String pkg,int direction){
+    java.util.List<ResolveInfo> apps=installed();
+    java.util.List<String> names=new ArrayList<String>();int index=-1;
+    for(int i=0;i<apps.size();i++){String n=apps.get(i).activityInfo.packageName;names.add(n);if(n.equals(pkg))index=i;}
+    if(index<0||index+direction<0||index+direction>=names.size())return;
+    Collections.swap(names,index,index+direction);
+    StringBuilder b=new StringBuilder();for(String n:names){if(b.length()>0)b.append(",");b.append(n);}
+    getPreferences(MODE_PRIVATE).edit().putString("app_order",b.toString()).apply();
+    arrangeApps();
+  }
+  void arrangeApps(){
+    screen("SORT APPS  •  ترتيب التطبيقات");
+    button("↩  Back to HOME",this::home);
+    button("↺  Restore alphabetical order",()->{getPreferences(MODE_PRIVATE).edit().remove("app_order").apply();arrangeApps();});
+    PackageManager pm=getPackageManager();
+    for(ResolveInfo app:installed()){
+      String pkg=app.activityInfo.packageName;
+      button("▲  "+String.valueOf(app.loadLabel(pm))+"  •  Move earlier",()->moveApp(pkg,-1));
+      button("▼  "+String.valueOf(app.loadLabel(pm))+"  •  Move later",()->moveApp(pkg,1));
+    }
+  }
+  void inputSources(){
+    screen("HDMI / INPUT  •  المداخل");
+    button("SOURCE on Haier physical remote: opens TV source selection",()->{});
+    button("Try opening built-in TV input menu",this::openVendorInput);
+    button("Start-up input selection: "+(getPreferences(MODE_PRIVATE).getBoolean("show_input_at_start",false)?"ON":"OFF")+" (tap)",()->{
+      boolean enabled=getPreferences(MODE_PRIVATE).getBoolean("show_input_at_start",false);
+      getPreferences(MODE_PRIVATE).edit().putBoolean("show_input_at_start",!enabled).apply();inputSources();
+    });
+    button("Note: Detecting active HDMI or switching physical inputs needs Haier firmware support",()->{});
+    button("Back to HOME",this::home);
+  }
+  boolean openVendorInput(){
+    PackageManager pm=getPackageManager();
+    Intent query=new Intent(Intent.ACTION_MAIN);query.addCategory(Intent.CATEGORY_LAUNCHER);
+    java.util.List<ResolveInfo> apps=pm.queryIntentActivities(query,0);
+    for(ResolveInfo app:apps){
+      String name=String.valueOf(app.loadLabel(pm)).toLowerCase(Locale.US);
+      String pkg=app.activityInfo.packageName.toLowerCase(Locale.US);
+      if(name.equals("source")||name.equals("input")||name.contains("input source")||name.contains("hdmi")||pkg.endsWith(".tvinput")){
+        Intent go=pm.getLaunchIntentForPackage(app.activityInfo.packageName);
+        if(go!=null){try{startActivity(go);return true;}catch(Exception ignored){}}
+      }
+    }
+    Toast.makeText(this,"Source selector unavailable — use SOURCE on Haier remote",Toast.LENGTH_LONG).show();
+    return false;
+  }
   void files(File folder){screen("Files: "+folder.getAbsolutePath());File parent=folder.getParentFile();if(parent!=null)button(".. Back folder",()->files(parent));File[] entries=folder.listFiles();if(entries==null)return;Arrays.sort(entries,(a,b)->a.getName().compareToIgnoreCase(b.getName()));int n=0;for(File f:entries){if(n++>150)break;button((f.isDirectory()?"[DIR] ":"[FILE] ")+f.getName(),()->{if(f.isDirectory())files(f);else{Intent i=new Intent(Intent.ACTION_VIEW);String nm=f.getName().toLowerCase(Locale.US);String mime=nm.endsWith(".apk")?"application/vnd.android.package-archive":nm.endsWith(".mp4")?"video/mp4":nm.endsWith(".mp3")?"audio/mpeg":"*/*";i.setDataAndType(Uri.fromFile(f),mime);try{startActivity(i);}catch(Exception e){Toast.makeText(this,"No compatible app",0).show();}}});}}
-  void settings(){screen("Settings");button("Wi-Fi",()->launch(new Intent(Settings.ACTION_WIFI_SETTINGS)));button("Display",()->launch(new Intent(Settings.ACTION_DISPLAY_SETTINGS)));button("Sound",()->launch(new Intent(Settings.ACTION_SOUND_SETTINGS)));button("Android Settings",()->launch(new Intent(Settings.ACTION_SETTINGS)));button("Back to HOME",this::home);}
+  void settings(){screen("Settings");button("Reorder Apps | ترتيب التطبيقات",this::arrangeApps);button("HDMI / Input | المداخل",this::inputSources);button("Wi-Fi",()->launch(new Intent(Settings.ACTION_WIFI_SETTINGS)));button("Display",()->launch(new Intent(Settings.ACTION_DISPLAY_SETTINGS)));button("Sound",()->launch(new Intent(Settings.ACTION_SOUND_SETTINGS)));button("Android Settings",()->launch(new Intent(Settings.ACTION_SETTINGS)));button("Back to HOME",this::home);}
   void launch(Intent i){try{startActivity(i);}catch(Exception e){Toast.makeText(this,"Unavailable",0).show();}}
 
   String textFile(String path,int maxChars){StringBuilder sb=new StringBuilder();try(BufferedReader reader=new BufferedReader(new FileReader(path))){String line;while((line=reader.readLine())!=null&&sb.length()<maxChars){sb.append(line).append("\n");}}catch(Exception e){return "Unavailable: "+e.getClass().getSimpleName();}return sb.toString().substring(0,Math.min(maxChars,sb.length()));}
