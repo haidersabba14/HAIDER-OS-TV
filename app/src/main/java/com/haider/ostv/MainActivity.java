@@ -2,7 +2,7 @@ package com.haider.ostv;
 import android.app.*;import android.os.*;import android.content.*;import android.content.pm.*;import android.graphics.Color;import android.graphics.drawable.GradientDrawable;import android.graphics.drawable.Drawable;import android.graphics.Typeface;import android.view.animation.DecelerateInterpolator;import android.net.Uri;import android.net.wifi.WifiManager;import android.provider.Settings;import android.view.*;import android.widget.*;import java.io.*;import java.net.*;import java.security.SecureRandom;import java.util.*;
 public class MainActivity extends Activity {
   ArrayList<ArrayList<View>> navRows=new ArrayList<ArrayList<View>>(); int navRow=0,navCol=0; LinearLayout list; ServerSocket listener; volatile boolean enabled=false; String pin; String page=""; int failedAttempts=0; long lockUntil=0L; final int GOLD=Color.rgb(229,181,76);
-  @Override public void onCreate(Bundle b){super.onCreate(b);pin=String.format(Locale.US,"%06d",new SecureRandom().nextInt(1000000));home();}
+  @Override public void onCreate(Bundle b){super.onCreate(b);pin=String.format(Locale.US,"%06d",new SecureRandom().nextInt(1000000));setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);home();}
 
   final int BG=Color.rgb(12,10,11), PANEL=Color.rgb(34,27,25), MUTED=Color.rgb(189,164,137);
   int dp(float v){return (int)(getResources().getDisplayMetrics().density*v+0.5f);}
@@ -273,7 +273,28 @@ public class MainActivity extends Activity {
   synchronized void stopServer(){enabled=false;try{if(listener!=null)listener.close();}catch(Exception ignored){}}
   void serve(Socket c)throws Exception{c.setSoTimeout(2500);if(System.currentTimeMillis()<lockUntil){reply(c,429,"{\"error\":\"try_later\"}");return;}BufferedReader reader=new BufferedReader(new InputStreamReader(c.getInputStream(),"UTF-8"));String first=reader.readLine();if(first==null||first.length()>200)return;boolean authorized=false;int length=0;for(int n=0;n<32;n++){String l=reader.readLine();if(l==null||l.isEmpty())break;if(l.length()>1024)return;String lower=l.toLowerCase(Locale.US);if(lower.startsWith("x-haider-token:"))authorized=l.substring(l.indexOf(':')+1).trim().equals(pin);if(lower.startsWith("content-length:"))try{length=Integer.parseInt(l.substring(l.indexOf(':')+1).trim());}catch(Exception ignored){}}if(!first.startsWith("POST /command ")||!authorized||length<1||length>256){failedAttempts++;if(failedAttempts>=5){lockUntil=System.currentTimeMillis()+60000;failedAttempts=0;}reply(c,401,"{\"error\":\"unauthorized\"}");return;}failedAttempts=0;char[] body=new char[length];int got=0;while(got<length){int k=reader.read(body,got,length-got);if(k<0)break;got+=k;}String input=new String(body,0,got).toUpperCase(Locale.US);String cmd=null;for(String k:new String[]{"UP","DOWN","LEFT","RIGHT","OK","BACK","HOME","VOLUME_UP","VOLUME_DOWN"})if(input.matches("(?s).*\\\"KEY\\\"\\s*:\\s*\\\""+k+"\\\".*")){cmd=k;break;}if(cmd==null){reply(c,400,"{\"error\":\"invalid\"}");return;}final String action=cmd;runOnUiThread(()->perform(action));reply(c,200,"{\"ok\":true}");}
   void reply(Socket c,int status,String data)throws Exception{byte[] b=data.getBytes("UTF-8");c.getOutputStream().write(("HTTP/1.1 "+status+" OK\r\nContent-Type: application/json\r\nContent-Length: "+b.length+"\r\nConnection: close\r\n\r\n").getBytes("US-ASCII"));c.getOutputStream().write(b);}
-  void perform(String key){if(key.equals("HOME"))home();else if(key.equals("BACK"))onBackPressed();else if(key.equals("VOLUME_UP")||key.equals("VOLUME_DOWN")){android.media.AudioManager a=(android.media.AudioManager)getSystemService(AUDIO_SERVICE);a.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,key.equals("VOLUME_UP")?1:-1,android.media.AudioManager.FLAG_SHOW_UI);}else if(key.equals("OK")){View v=getCurrentFocus();if(v!=null)v.performClick();}else{int d=key.equals("UP")?View.FOCUS_UP:key.equals("DOWN")?View.FOCUS_DOWN:key.equals("LEFT")?View.FOCUS_LEFT:View.FOCUS_RIGHT;if((page.equals("HOME")||page.equals("APPLICATIONS"))&&moveSelection(d))return;View v=getCurrentFocus();if(v==null){if(list!=null&&list.getChildCount()>0)list.getChildAt(0).requestFocus();}else{View next=v.focusSearch(d);if(next!=null)next.requestFocus();}}}
+  // Runs only on the Activity UI thread after an authenticated LAN remote command.
+  // Android 4.4 TV devices can route volume to different output streams.
+  // A suggested-stream adjustment lets the OS select the active route; STREAM_MUSIC
+  // is used as a fallback on old firmwares that do not honor suggested routing.
+  void adjustTvVolume(boolean up){
+    android.media.AudioManager audio=(android.media.AudioManager)getSystemService(AUDIO_SERVICE);
+    if(audio==null){Toast.makeText(this,"TV audio unavailable",Toast.LENGTH_SHORT).show();return;}
+    int step=up?android.media.AudioManager.ADJUST_RAISE:android.media.AudioManager.ADJUST_LOWER;
+    try{
+      int before=audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+      audio.adjustSuggestedStreamVolume(step,android.media.AudioManager.USE_DEFAULT_STREAM_TYPE,android.media.AudioManager.FLAG_SHOW_UI);
+      int after=audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+      if(after==before){
+        audio.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,step,android.media.AudioManager.FLAG_SHOW_UI);
+      }
+    }catch(SecurityException e){
+      Toast.makeText(this,"Volume control restricted by TV firmware",Toast.LENGTH_SHORT).show();
+    }catch(RuntimeException e){
+      Toast.makeText(this,"Volume control not supported",Toast.LENGTH_SHORT).show();
+    }
+  }
+  void perform(String key){if(key.equals("HOME"))home();else if(key.equals("BACK"))onBackPressed();else if(key.equals("VOLUME_UP")||key.equals("VOLUME_DOWN")){adjustTvVolume(key.equals("VOLUME_UP"));}else if(key.equals("OK")){View v=getCurrentFocus();if(v!=null)v.performClick();}else{int d=key.equals("UP")?View.FOCUS_UP:key.equals("DOWN")?View.FOCUS_DOWN:key.equals("LEFT")?View.FOCUS_LEFT:View.FOCUS_RIGHT;if((page.equals("HOME")||page.equals("APPLICATIONS"))&&moveSelection(d))return;View v=getCurrentFocus();if(v==null){if(list!=null&&list.getChildCount()>0)list.getChildAt(0).requestFocus();}else{View next=v.focusSearch(d);if(next!=null)next.requestFocus();}}}
   @Override public void onBackPressed(){if(!page.equals("HOME"))home();else super.onBackPressed();}
   @Override protected void onDestroy(){stopServer();super.onDestroy();}
 }
