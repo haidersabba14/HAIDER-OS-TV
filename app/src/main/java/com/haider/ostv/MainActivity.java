@@ -5,11 +5,35 @@ public class MainActivity extends Activity {
   @Override public void onCreate(Bundle b){super.onCreate(b);byte[] key=new byte[12];new SecureRandom().nextBytes(key);StringBuilder s=new StringBuilder();for(byte v:key)s.append(String.format(Locale.US,"%02x",v&255));pin=s.toString();home();}
   void screen(String title){page=title;LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(24,14,24,14);root.setBackgroundColor(Color.rgb(12,13,18));TextView name=new TextView(this);name.setText("♛ HAIDER OS TV  |  "+title);name.setTextColor(GOLD);name.setTextSize(24);name.setPadding(0,10,0,18);root.addView(name);ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);}
   void button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setTextSize(19);b.setAllCaps(false);b.setOnClickListener(v->action.run());list.addView(b);}
-  void home(){screen("HOME");button("Applications | التطبيقات",this::apps);button("Files & APK | الملفات",()->files(android.os.Environment.getExternalStorageDirectory()));button("Phone Remote | ريموت الجوال",this::remote);button("Settings | الإعدادات",this::settings);button("About | حول",this::about);}
+  void home(){screen("HOME");button("Applications | التطبيقات",this::apps);button("Files & APK | الملفات",()->files(android.os.Environment.getExternalStorageDirectory()));button("Phone Remote | ريموت الجوال",this::remote);button("Settings | الإعدادات",this::settings);button("Device Diagnostics | فحص الجهاز",this::diagnostics);button("About | حول",this::about);}
   void apps(){screen("Applications");PackageManager pm=getPackageManager();Intent intent=new Intent(Intent.ACTION_MAIN);intent.addCategory(Intent.CATEGORY_LAUNCHER);for(ResolveInfo a:pm.queryIntentActivities(intent,0)){String pkg=a.activityInfo.packageName;button(a.loadLabel(pm).toString(),()->{Intent launch=pm.getLaunchIntentForPackage(pkg);if(launch!=null)startActivity(launch);});}}
   void files(File folder){screen("Files: "+folder.getAbsolutePath());File parent=folder.getParentFile();if(parent!=null)button(".. Back folder",()->files(parent));File[] entries=folder.listFiles();if(entries==null)return;Arrays.sort(entries,(a,b)->a.getName().compareToIgnoreCase(b.getName()));int n=0;for(File f:entries){if(n++>150)break;button((f.isDirectory()?"[DIR] ":"[FILE] ")+f.getName(),()->{if(f.isDirectory())files(f);else{Intent i=new Intent(Intent.ACTION_VIEW);String nm=f.getName().toLowerCase(Locale.US);String mime=nm.endsWith(".apk")?"application/vnd.android.package-archive":nm.endsWith(".mp4")?"video/mp4":nm.endsWith(".mp3")?"audio/mpeg":"*/*";i.setDataAndType(Uri.fromFile(f),mime);try{startActivity(i);}catch(Exception e){Toast.makeText(this,"No compatible app",0).show();}}});}}
   void settings(){screen("Settings");button("Wi-Fi",()->launch(new Intent(Settings.ACTION_WIFI_SETTINGS)));button("Display",()->launch(new Intent(Settings.ACTION_DISPLAY_SETTINGS)));button("Sound",()->launch(new Intent(Settings.ACTION_SOUND_SETTINGS)));button("Android Settings",()->launch(new Intent(Settings.ACTION_SETTINGS)));button("Back to HOME",this::home);}
   void launch(Intent i){try{startActivity(i);}catch(Exception e){Toast.makeText(this,"Unavailable",0).show();}}
+
+  String textFile(String path,int maxChars){StringBuilder sb=new StringBuilder();try(BufferedReader reader=new BufferedReader(new FileReader(path))){String line;while((line=reader.readLine())!=null&&sb.length()<maxChars){sb.append(line).append("\n");}}catch(Exception e){return "Unavailable: "+e.getClass().getSimpleName();}return sb.toString().substring(0,Math.min(maxChars,sb.length()));}
+  String memorySummary(){String info=textFile("/proc/meminfo",4096);for(String line:info.split("\n"))if(line.startsWith("MemTotal:"))return line.trim();return "Unavailable";}
+  String cpuSummary(){String info=textFile("/proc/cpuinfo",6000);StringBuilder sb=new StringBuilder();for(String line:info.split("\n")){String lineLower=line.toLowerCase(Locale.US);if(lineLower.startsWith("processor")||lineLower.startsWith("hardware")||lineLower.startsWith("model name")||lineLower.startsWith("cpu architecture")||lineLower.startsWith("cpu implementer")||lineLower.startsWith("cpu part")||lineLower.startsWith("features")){sb.append(line.trim()).append("\n");if(sb.length()>1300)break;}}return sb.length()>0?sb.toString():"Unavailable";}
+  String hardwareReport(){return "HAIDER OS TV 0.2 | Read-only device report\n"
+    +"Android: "+Build.VERSION.RELEASE+" (API "+Build.VERSION.SDK_INT+")\n"
+    +"Manufacturer: "+Build.MANUFACTURER+"\n"
+    +"Brand: "+Build.BRAND+"\n"
+    +"Model: "+Build.MODEL+"\n"
+    +"Board: "+Build.BOARD+"\n"
+    +"Device: "+Build.DEVICE+"\n"
+    +"Product: "+Build.PRODUCT+"\n"
+    +"Hardware: "+Build.HARDWARE+"\n"
+    +"CPU ABI: "+Build.CPU_ABI+"\n"
+    +"CPU ABI2: "+Build.CPU_ABI2+"\n"
+    +"Kernel: "+System.getProperty("os.version","Unavailable")+"\n"
+    +"Build ID: "+Build.ID+"\n"
+    +"Build display: "+Build.DISPLAY+"\n"
+    +"Fingerprint: "+Build.FINGERPRINT+"\n"
+    +"RAM: "+memorySummary()+"\n"
+    +"CPU details:\n"+cpuSummary()+"\n"
+    +"Note: Hardware properties do not prove firmware compatibility. Do not flash unverified firmware.";
+  }
+  void diagnostics(){screen("Device Diagnostics 0.2");String report=hardwareReport();button("Copy report to clipboard | نسخ التقرير",()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(ClipData.newPlainText("HAIDER TV hardware report",report));Toast.makeText(this,"Report copied",Toast.LENGTH_LONG).show();});for(String line:report.split("\n")){TextView text=new TextView(this);text.setText(line);text.setTextColor(Color.WHITE);text.setTextSize(17);text.setPadding(3,8,3,8);list.addView(text);}button("Back to HOME",this::home);}
   void about(){screen("About");button("Android "+Build.VERSION.RELEASE+" API "+Build.VERSION.SDK_INT,()->{});button("Model: "+Build.MODEL,()->{});button("Hardware: "+Build.HARDWARE,()->{});button("This APK does not update Android firmware",()->{});}
   String ip(){try{WifiManager w=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);int a=w.getConnectionInfo().getIpAddress();return (a&255)+"."+((a>>8)&255)+"."+((a>>16)&255)+"."+((a>>24)&255);}catch(Exception e){return "Unknown";}}
   void remote(){screen("Phone Remote");button("TV IP: "+ip()+" Port: 8765",()->{});button("Pairing Token: "+pin,()->{});button("Remote: "+(enabled?"ON":"OFF")+" (tap to toggle)",()->{if(enabled)stopServer();else startServer();remote();});button("Commands: UP DOWN LEFT RIGHT OK BACK HOME",()->{});button("Use X-Haider-Token header and POST /command JSON",()->{});}
