@@ -1,0 +1,22 @@
+name: HAIDERRemote
+options:
+  bundleIdPrefix: com.haider
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+targets:
+  HAIDERRemote:
+    type: application
+    platform: iOS
+    sources:
+      - HaiderRemoteApp.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.haider.HAIDERRemote
+        INFOPLIST_KEY_CFBundleDisplayName: HAIDER Remote
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: يستخدم الشبكة المحلية للاتصال بتلفزيون HAIDER OS TV.
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: '1'
+        CODE_SIGN_STYLE: Manual
