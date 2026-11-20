@@ -133,13 +133,9 @@ public class MainActivity extends Activity {
       for(int j=i;j<Math.min(i+cols,Math.min(max,apps.size()));j++){
         ResolveInfo info=apps.get(j);String pkg=info.activityInfo.packageName;
         Drawable icon=null;try{icon=info.loadIcon(pm);}catch(Exception ignored){}
-        LinearLayout holder=new LinearLayout(this);holder.setOrientation(1);
-        LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(138),1);cell.setMargins(dp(5),dp(5),dp(5),dp(5));
-        holder.addView(dockTile(String.valueOf(info.loadLabel(pm)),icon,()->{
+        row.addView(dockTile(String.valueOf(info.loadLabel(pm)),icon,()->{
           Intent go=pm.getLaunchIntentForPackage(pkg);if(go!=null)launch(go);
         }));
-        // Each grid cell uses a weighted container, avoiding large scrolling cards.
-        row.addView(holder,cell);
       }
       parent.addView(row);
     }
