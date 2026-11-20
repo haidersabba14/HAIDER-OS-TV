@@ -1,12 +1,143 @@
 package com.haider.ostv;
-import android.app.*;import android.os.*;import android.content.*;import android.content.pm.*;import android.graphics.Color;import android.net.Uri;import android.net.wifi.WifiManager;import android.provider.Settings;import android.view.*;import android.widget.*;import java.io.*;import java.net.*;import java.security.SecureRandom;import java.util.*;
+import android.app.*;import android.os.*;import android.content.*;import android.content.pm.*;import android.graphics.Color;import android.graphics.drawable.GradientDrawable;import android.graphics.drawable.Drawable;import android.graphics.Typeface;import android.view.animation.DecelerateInterpolator;import android.net.Uri;import android.net.wifi.WifiManager;import android.provider.Settings;import android.view.*;import android.widget.*;import java.io.*;import java.net.*;import java.security.SecureRandom;import java.util.*;
 public class MainActivity extends Activity {
   LinearLayout list; ServerSocket listener; volatile boolean enabled=false; String pin; String page=""; int failedAttempts=0; long lockUntil=0L; final int GOLD=Color.rgb(229,181,76);
   @Override public void onCreate(Bundle b){super.onCreate(b);pin=String.format(Locale.US,"%06d",new SecureRandom().nextInt(1000000));home();}
-  void screen(String title){page=title;LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(24,14,24,14);root.setBackgroundColor(Color.rgb(12,13,18));TextView name=new TextView(this);name.setText("♛ HAIDER OS TV  |  "+title);name.setTextColor(GOLD);name.setTextSize(24);name.setPadding(0,10,0,18);root.addView(name);ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);}
-  void button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setTextSize(19);b.setAllCaps(false);b.setOnClickListener(v->action.run());list.addView(b);}
-  void home(){screen("HOME");button("Applications | التطبيقات",this::apps);button("Files & APK | الملفات",()->files(android.os.Environment.getExternalStorageDirectory()));button("Phone Remote | ريموت الجوال",this::remote);button("Settings | الإعدادات",this::settings);button("Device Diagnostics | فحص الجهاز",this::diagnostics);button("About | حول",this::about);}
-  void apps(){screen("Applications");PackageManager pm=getPackageManager();Intent intent=new Intent(Intent.ACTION_MAIN);intent.addCategory(Intent.CATEGORY_LAUNCHER);for(ResolveInfo a:pm.queryIntentActivities(intent,0)){String pkg=a.activityInfo.packageName;button(a.loadLabel(pm).toString(),()->{Intent launch=pm.getLaunchIntentForPackage(pkg);if(launch!=null)startActivity(launch);});}}
+
+  final int BG=Color.rgb(12,10,11), PANEL=Color.rgb(34,27,25), MUTED=Color.rgb(189,164,137);
+  int dp(float v){return (int)(getResources().getDisplayMetrics().density*v+0.5f);}
+  GradientDrawable shape(int top,int bottom,int radius,boolean selected){
+    GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{top,bottom});
+    g.setCornerRadius(dp(radius));g.setStroke(dp(selected?3:1),selected?GOLD:Color.rgb(80,62,44));return g;
+  }
+  TextView text(String caption,int size,int color,boolean bold){
+    TextView t=new TextView(this);t.setText(caption);t.setTextColor(color);t.setTextSize(size);
+    if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);t.setGravity(Gravity.CENTER_VERTICAL);return t;
+  }
+  LinearLayout pageRoot(String title){
+    page=title;LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(28),dp(18),dp(28),dp(12));
+    root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{BG,Color.rgb(36,23,19),Color.rgb(16,13,13)}));
+    LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
+    TextView logo=text("♛ HAIDER  OS TV",25,GOLD,true);header.addView(logo,new LinearLayout.LayoutParams(0,dp(45),1));
+    TextView version=text("THE FUTURE OF SMART TV     •     "+title,12,MUTED,false);
+    header.addView(version);root.addView(header);
+    View border=new View(this);border.setBackgroundColor(Color.rgb(101,74,44));
+    LinearLayout.LayoutParams borderParams=new LinearLayout.LayoutParams(-1,dp(1));borderParams.setMargins(0,dp(5),0,dp(10));root.addView(border,borderParams);
+    return root;
+  }
+  void screen(String title){
+    LinearLayout root=pageRoot(title);ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);
+    list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
+  }
+  void button(String label,Runnable action){
+    TextView b=text(label,18,Color.WHITE,true);b.setPadding(dp(20),dp(16),dp(20),dp(16));
+    b.setFocusable(true);b.setClickable(true);
+    b.setBackground(shape(PANEL,Color.rgb(50,37,28),17,false));
+    b.setOnFocusChangeListener((v,focused)->{
+      v.setBackground(shape(focused?Color.rgb(84,58,31):PANEL,focused?Color.rgb(49,35,25):Color.rgb(50,37,28),17,focused));
+      v.animate().scaleX(focused?1.012f:1f).scaleY(focused?1.012f:1f).setDuration(130).start();
+    });
+    b.setOnClickListener(v->action.run());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(5),0,dp(5));list.addView(b,p);
+  }
+  void labelRow(LinearLayout parent,String caption){
+    TextView label=text(caption,19,GOLD,true);label.setPadding(dp(5),dp(15),0,dp(9));parent.addView(label);
+  }
+  LinearLayout horizontalRow(LinearLayout parent){
+    HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);
+    scroll.setClipToPadding(false);LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+    row.setPadding(dp(6),dp(5),dp(6),dp(10));scroll.addView(row);
+    parent.addView(scroll,new LinearLayout.LayoutParams(-1,-2));return row;
+  }
+  View tile(String title,Drawable icon,Runnable open){
+    LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setGravity(Gravity.CENTER);
+    card.setFocusable(true);card.setClickable(true);card.setPadding(dp(9),dp(10),dp(9),dp(10));
+    card.setBackground(shape(Color.rgb(62,44,33),Color.rgb(28,24,23),20,false));
+    LinearLayout.LayoutParams box=new LinearLayout.LayoutParams(dp(144),dp(135));box.setMargins(dp(4),0,dp(10),0);
+    ImageView picture=new ImageView(this);picture.setScaleType(ImageView.ScaleType.FIT_CENTER);
+    if(icon!=null)picture.setImageDrawable(icon);else picture.setImageResource(android.R.drawable.ic_menu_manage);
+    card.addView(picture,new LinearLayout.LayoutParams(dp(61),dp(65)));
+    TextView caption=text(title,13,Color.WHITE,true);caption.setGravity(Gravity.CENTER);caption.setMaxLines(2);
+    caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
+    LinearLayout.LayoutParams cap=new LinearLayout.LayoutParams(-1,dp(40));cap.topMargin=dp(5);card.addView(caption,cap);
+    card.setOnFocusChangeListener((v,focused)->{
+      v.setBackground(shape(focused?Color.rgb(112,79,38):Color.rgb(62,44,33),focused?Color.rgb(56,38,28):Color.rgb(28,24,23),20,focused));
+      v.animate().scaleX(focused?1.055f:1f).scaleY(focused?1.055f:1f).setDuration(140).setInterpolator(new DecelerateInterpolator()).start();
+      caption.setTextColor(focused?GOLD:Color.WHITE);
+      if(focused)v.bringToFront();
+    });
+    card.setOnClickListener(v->open.run());card.setLayoutParams(box);return card;
+  }
+  Drawable symbol(int res){return getResources().getDrawable(res);}
+  void quick(LinearLayout row,String title,int icon,Runnable action){row.addView(tile(title,symbol(icon),action));}
+  List<ResolveInfo> installed(){
+    PackageManager pm=getPackageManager();Intent query=new Intent(Intent.ACTION_MAIN);
+    query.addCategory(Intent.CATEGORY_LAUNCHER);
+    List<ResolveInfo> all=pm.queryIntentActivities(query,0);
+    List<ResolveInfo> visible=new ArrayList<ResolveInfo>();
+    for(ResolveInfo r:all){
+      String name=String.valueOf(r.loadLabel(pm)).toLowerCase(Locale.US);
+      if(name.matches(".*(\\bgames?\\b|ألعاب|لعبة|game center).*"))continue;
+      if((r.activityInfo.applicationInfo.flags & 0x02000000)!=0)continue;
+      visible.add(r);
+    }
+    Collections.sort(visible,new Comparator<ResolveInfo>(){public int compare(ResolveInfo x,ResolveInfo y){
+      return String.valueOf(x.loadLabel(pm)).compareToIgnoreCase(String.valueOf(y.loadLabel(pm)));
+    }});
+    return visible;
+  }
+  void appsRow(LinearLayout parent,List<ResolveInfo> all,int first,int last){
+    LinearLayout row=horizontalRow(parent);PackageManager pm=getPackageManager();
+    for(int i=first;i<Math.min(last,all.size());i++){
+      ResolveInfo a=all.get(i);final String pkg=a.activityInfo.packageName;
+      Drawable image=null;try{image=a.loadIcon(pm);}catch(Exception ignored){}
+      row.addView(tile(String.valueOf(a.loadLabel(pm)),image,()->{
+        Intent go=pm.getLaunchIntentForPackage(pkg);
+        if(go!=null)launch(go);
+      }));
+    }
+  }
+  void home(){
+    LinearLayout root=pageRoot("HOME");
+    ScrollView scroller=new ScrollView(this);scroller.setFillViewport(true);
+    LinearLayout content=new LinearLayout(this);content.setOrientation(1);
+    TextView hero=text("YOUR ENTERTAINMENT, REIMAGINED",26,Color.WHITE,true);
+    hero.setPadding(dp(10),dp(12),0,dp(4));content.addView(hero);
+    TextView sub=text("Elegant • Fast • Remote Ready",14,MUTED,false);
+    sub.setPadding(dp(10),0,0,dp(7));content.addView(sub);
+    labelRow(content,"الرئيسية  •  Quick Access");
+    LinearLayout quicks=horizontalRow(content);
+    quick(quicks,"التطبيقات",android.R.drawable.ic_menu_view,this::apps);
+    quick(quicks,"الملفات / APK",android.R.drawable.ic_menu_save,()->files(android.os.Environment.getExternalStorageDirectory()));
+    quick(quicks,"الإعدادات",android.R.drawable.ic_menu_preferences,this::settings);
+    quick(quicks,"ريموت الآيفون",android.R.drawable.ic_menu_call,this::remote);
+    quick(quicks,"معلومات الجهاز",android.R.drawable.ic_menu_info_details,this::diagnostics);
+    List<ResolveInfo> all=installed();
+    labelRow(content,"تطبيقاتك  •  Installed Apps");
+    if(all.isEmpty())content.addView(text("لا توجد تطبيقات قابلة للعرض",15,MUTED,false));
+    else{
+      appsRow(content,all,0,Math.min(10,all.size()));
+      if(all.size()>10){labelRow(content,"المزيد من التطبيقات");appsRow(content,all,10,Math.min(22,all.size()));}
+    }
+    labelRow(content,"HAIDER OS TV  •  Android "+Build.VERSION.RELEASE);
+    TextView footer=text("Use your TV remote or HAIDER Remote on iPhone • No games",12,MUTED,false);
+    footer.setPadding(dp(8),dp(3),0,dp(14));content.addView(footer);
+    scroller.addView(content);root.addView(scroller,new LinearLayout.LayoutParams(-1,0,1));
+    setContentView(root);scroller.post(()->{
+      if(quicks.getChildCount()>0)quicks.getChildAt(0).requestFocus();
+    });
+  }
+  void apps(){
+    LinearLayout root=pageRoot("APPLICATIONS");
+    ScrollView sc=new ScrollView(this);LinearLayout body=new LinearLayout(this);body.setOrientation(1);
+    List<ResolveInfo> all=installed();labelRow(body,"كل التطبيقات  •  All Apps");
+    for(int i=0;i<all.size();i+=8)appsRow(body,all,i,i+8);
+    sc.addView(body);root.addView(sc,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
+    if(body.getChildCount()>1){View first=body.getChildAt(1);if(first instanceof HorizontalScrollView){
+      HorizontalScrollView h=(HorizontalScrollView)first;h.post(()->{
+        LinearLayout row=(LinearLayout)h.getChildAt(0);if(row.getChildCount()>0)row.getChildAt(0).requestFocus();
+      });
+    }}
+  }
   void files(File folder){screen("Files: "+folder.getAbsolutePath());File parent=folder.getParentFile();if(parent!=null)button(".. Back folder",()->files(parent));File[] entries=folder.listFiles();if(entries==null)return;Arrays.sort(entries,(a,b)->a.getName().compareToIgnoreCase(b.getName()));int n=0;for(File f:entries){if(n++>150)break;button((f.isDirectory()?"[DIR] ":"[FILE] ")+f.getName(),()->{if(f.isDirectory())files(f);else{Intent i=new Intent(Intent.ACTION_VIEW);String nm=f.getName().toLowerCase(Locale.US);String mime=nm.endsWith(".apk")?"application/vnd.android.package-archive":nm.endsWith(".mp4")?"video/mp4":nm.endsWith(".mp3")?"audio/mpeg":"*/*";i.setDataAndType(Uri.fromFile(f),mime);try{startActivity(i);}catch(Exception e){Toast.makeText(this,"No compatible app",0).show();}}});}}
   void settings(){screen("Settings");button("Wi-Fi",()->launch(new Intent(Settings.ACTION_WIFI_SETTINGS)));button("Display",()->launch(new Intent(Settings.ACTION_DISPLAY_SETTINGS)));button("Sound",()->launch(new Intent(Settings.ACTION_SOUND_SETTINGS)));button("Android Settings",()->launch(new Intent(Settings.ACTION_SETTINGS)));button("Back to HOME",this::home);}
   void launch(Intent i){try{startActivity(i);}catch(Exception e){Toast.makeText(this,"Unavailable",0).show();}}
@@ -14,7 +145,7 @@ public class MainActivity extends Activity {
   String textFile(String path,int maxChars){StringBuilder sb=new StringBuilder();try(BufferedReader reader=new BufferedReader(new FileReader(path))){String line;while((line=reader.readLine())!=null&&sb.length()<maxChars){sb.append(line).append("\n");}}catch(Exception e){return "Unavailable: "+e.getClass().getSimpleName();}return sb.toString().substring(0,Math.min(maxChars,sb.length()));}
   String memorySummary(){String info=textFile("/proc/meminfo",4096);for(String line:info.split("\n"))if(line.startsWith("MemTotal:"))return line.trim();return "Unavailable";}
   String cpuSummary(){String info=textFile("/proc/cpuinfo",6000);StringBuilder sb=new StringBuilder();for(String line:info.split("\n")){String lineLower=line.toLowerCase(Locale.US);if(lineLower.startsWith("processor")||lineLower.startsWith("hardware")||lineLower.startsWith("model name")||lineLower.startsWith("cpu architecture")||lineLower.startsWith("cpu implementer")||lineLower.startsWith("cpu part")||lineLower.startsWith("features")){sb.append(line.trim()).append("\n");if(sb.length()>1300)break;}}return sb.length()>0?sb.toString():"Unavailable";}
-  String hardwareReport(){return "HAIDER OS TV 0.2 | Read-only device report\n"
+  String hardwareReport(){return "HAIDER OS TV 0.3 | Read-only device report\n"
     +"Android: "+Build.VERSION.RELEASE+" (API "+Build.VERSION.SDK_INT+")\n"
     +"Manufacturer: "+Build.MANUFACTURER+"\n"
     +"Brand: "+Build.BRAND+"\n"
