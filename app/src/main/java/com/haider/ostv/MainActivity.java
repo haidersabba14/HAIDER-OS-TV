@@ -96,35 +96,98 @@ public class MainActivity extends Activity {
       }));
     }
   }
-  void home(){
-    LinearLayout root=pageRoot("HOME");
-    ScrollView scroller=new ScrollView(this);scroller.setFillViewport(true);
-    LinearLayout content=new LinearLayout(this);content.setOrientation(1);
-    TextView hero=text("YOUR ENTERTAINMENT, REIMAGINED",26,Color.WHITE,true);
-    hero.setPadding(dp(10),dp(12),0,dp(4));content.addView(hero);
-    TextView sub=text("Elegant • Fast • Remote Ready",14,MUTED,false);
-    sub.setPadding(dp(10),0,0,dp(7));content.addView(sub);
-    labelRow(content,"الرئيسية  •  Quick Access");
-    LinearLayout quicks=horizontalRow(content);
-    quick(quicks,"التطبيقات",android.R.drawable.ic_menu_view,this::apps);
-    quick(quicks,"الملفات / APK",android.R.drawable.ic_menu_save,()->files(android.os.Environment.getExternalStorageDirectory()));
-    quick(quicks,"الإعدادات",android.R.drawable.ic_menu_preferences,this::settings);
-    quick(quicks,"ريموت الآيفون",android.R.drawable.ic_menu_call,this::remote);
-    quick(quicks,"معلومات الجهاز",android.R.drawable.ic_menu_info_details,this::diagnostics);
-    List<ResolveInfo> all=installed();
-    labelRow(content,"تطبيقاتك  •  Installed Apps");
-    if(all.isEmpty())content.addView(text("لا توجد تطبيقات قابلة للعرض",15,MUTED,false));
-    else{
-      appsRow(content,all,0,Math.min(10,all.size()));
-      if(all.size()>10){labelRow(content,"المزيد من التطبيقات");appsRow(content,all,10,Math.min(22,all.size()));}
+
+  View dockTile(String caption,Drawable icon,Runnable open){
+    LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setGravity(Gravity.CENTER);
+    card.setFocusable(true);card.setClickable(true);
+    card.setPadding(dp(9),dp(7),dp(9),dp(7));
+    card.setBackground(shape(Color.rgb(41,38,40),Color.rgb(19,19,23),18,false));
+    ImageView image=new ImageView(this);
+    if(icon!=null)image.setImageDrawable(icon);
+    card.addView(image,new LinearLayout.LayoutParams(dp(55),dp(55)));
+    TextView name=text(caption,13,Color.rgb(231,226,222),true);
+    name.setGravity(Gravity.CENTER);name.setSingleLine(true);
+    name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+    LinearLayout.LayoutParams label=new LinearLayout.LayoutParams(-1,dp(25));label.topMargin=dp(5);card.addView(name,label);
+    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(115),1);
+    p.setMargins(dp(6),dp(7),dp(6),dp(7));card.setLayoutParams(p);
+    card.setOnClickListener(v->open.run());
+    card.setOnFocusChangeListener((v,focused)->{
+      card.setBackground(shape(focused?Color.rgb(101,77,45):Color.rgb(41,38,40),focused?Color.rgb(46,38,33):Color.rgb(19,19,23),18,focused));
+      name.setTextColor(focused?GOLD:Color.WHITE);
+      card.animate().scaleX(focused?1.06f:1f).scaleY(focused?1.06f:1f).setDuration(145).start();
+      if(focused)card.bringToFront();
+    });return card;
+  }
+  void dockApp(LinearLayout row,ResolveInfo info){
+    PackageManager pm=getPackageManager();String pkg=info.activityInfo.packageName;
+    Drawable icon=null;try{icon=info.loadIcon(pm);}catch(Exception ignored){}
+    row.addView(dockTile(String.valueOf(info.loadLabel(pm)),icon,()->{
+      Intent launch=pm.getLaunchIntentForPackage(pkg);if(launch!=null)launch(launch);
+    }));
+  }
+  void sectionGrid(LinearLayout parent,List<ResolveInfo> apps,int from,int max){
+    PackageManager pm=getPackageManager();int cols=4;
+    for(int i=from;i<Math.min(max,apps.size());i+=cols){
+      LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+      for(int j=i;j<Math.min(i+cols,Math.min(max,apps.size()));j++){
+        ResolveInfo info=apps.get(j);String pkg=info.activityInfo.packageName;
+        Drawable icon=null;try{icon=info.loadIcon(pm);}catch(Exception ignored){}
+        LinearLayout holder=new LinearLayout(this);holder.setOrientation(1);
+        LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(138),1);cell.setMargins(dp(5),dp(5),dp(5),dp(5));
+        holder.addView(dockTile(String.valueOf(info.loadLabel(pm)),icon,()->{
+          Intent go=pm.getLaunchIntentForPackage(pkg);if(go!=null)launch(go);
+        }));
+        // Each grid cell uses a weighted container, avoiding large scrolling cards.
+        row.addView(holder,cell);
+      }
+      parent.addView(row);
     }
-    labelRow(content,"HAIDER OS TV  •  Android "+Build.VERSION.RELEASE);
-    TextView footer=text("Use your TV remote or HAIDER Remote on iPhone • No games",12,MUTED,false);
-    footer.setPadding(dp(8),dp(3),0,dp(14));content.addView(footer);
-    scroller.addView(content);root.addView(scroller,new LinearLayout.LayoutParams(-1,0,1));
-    setContentView(root);scroller.post(()->{
-      if(quicks.getChildCount()>0)quicks.getChildAt(0).requestFocus();
-    });
+  }
+  void home(){
+    page="HOME";
+    LinearLayout root=new LinearLayout(this);root.setOrientation(1);
+    root.setPadding(dp(35),dp(19),dp(35),dp(10));
+    root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+      new int[]{Color.rgb(4,5,8),Color.rgb(18,14,15),Color.rgb(26,15,10),Color.rgb(5,6,9)}));
+    LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
+    TextView logo=text("♛ HAIDER OS TV",19,GOLD,true);top.addView(logo,new LinearLayout.LayoutParams(0,dp(39),1));
+    TextView clock=text(new java.text.SimpleDateFormat("HH:mm   •   EEE d MMM",Locale.getDefault()).format(new Date()),15,Color.WHITE,false);
+    clock.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);top.addView(clock);
+    root.addView(top);
+    View line=new View(this);line.setBackgroundColor(Color.rgb(65,51,42));
+    root.addView(line,new LinearLayout.LayoutParams(-1,dp(1)));
+    ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);
+    LinearLayout body=new LinearLayout(this);body.setOrientation(1);body.setGravity(Gravity.TOP);
+    TextView greeting=text("Your TV. Your space.",34,Color.WHITE,true);greeting.setPadding(dp(8),dp(24),0,0);body.addView(greeting);
+    TextView description=text("Beautifully simple. Made for your screen.",15,MUTED,false);
+    description.setPadding(dp(9),0,0,dp(14));body.addView(description);
+    TextView dockTitle=text("FAVORITES   •   المفضلة",14,GOLD,true);dockTitle.setPadding(dp(9),dp(8),0,dp(3));body.addView(dockTitle);
+    LinearLayout dock=new LinearLayout(this);dock.setOrientation(LinearLayout.HORIZONTAL);
+    dock.setPadding(dp(7),dp(7),dp(7),dp(7));
+    dock.setBackground(shape(Color.rgb(24,23,27),Color.rgb(15,15,19),24,false));
+    List<ResolveInfo> all=installed();
+    int favorites=Math.min(4,all.size());
+    for(int i=0;i<favorites;i++)dockApp(dock,all.get(i));
+    if(favorites==0) {
+      dock.addView(dockTile("التطبيقات",symbol(android.R.drawable.ic_menu_view),this::apps));
+      dock.addView(dockTile("الملفات",symbol(android.R.drawable.ic_menu_save),()->files(android.os.Environment.getExternalStorageDirectory())));
+    }
+    body.addView(dock);
+    TextView gridTitle=text("ALL APPS   •   التطبيقات",14,GOLD,true);
+    gridTitle.setPadding(dp(10),dp(21),0,dp(4));body.addView(gridTitle);
+    if(all.isEmpty()){body.addView(text("No installed apps found",16,Color.WHITE,false));}
+    else sectionGrid(body,all,0,Math.min(all.size(),20));
+    TextView actions=text("TOOLS  •  الأدوات",14,GOLD,true);
+    actions.setPadding(dp(10),dp(18),0,dp(4));body.addView(actions);
+    LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.HORIZONTAL);
+    tools.addView(dockTile("ملفات APK",symbol(android.R.drawable.ic_menu_save),()->files(android.os.Environment.getExternalStorageDirectory())));
+    tools.addView(dockTile("الإعدادات",symbol(android.R.drawable.ic_menu_preferences),this::settings));
+    tools.addView(dockTile("ريموت الجوال",symbol(android.R.drawable.ic_menu_call),this::remote));
+    tools.addView(dockTile("فحص الجهاز",symbol(android.R.drawable.ic_menu_info_details),this::diagnostics));
+    body.addView(tools);scroll.addView(body);
+    root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
+    scroll.post(()->{if(dock.getChildCount()>0)dock.getChildAt(0).requestFocus();});
   }
   void apps(){
     LinearLayout root=pageRoot("APPLICATIONS");
