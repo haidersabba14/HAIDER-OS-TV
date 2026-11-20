@@ -1,7 +1,7 @@
 package com.haider.ostv;
 import android.app.*;import android.os.*;import android.content.*;import android.content.pm.*;import android.graphics.Color;import android.graphics.drawable.GradientDrawable;import android.graphics.drawable.Drawable;import android.graphics.Typeface;import android.view.animation.DecelerateInterpolator;import android.net.Uri;import android.net.wifi.WifiManager;import android.provider.Settings;import android.view.*;import android.widget.*;import java.io.*;import java.net.*;import java.security.SecureRandom;import java.util.*;
 public class MainActivity extends Activity {
-  LinearLayout list; ServerSocket listener; volatile boolean enabled=false; String pin; String page=""; int failedAttempts=0; long lockUntil=0L; final int GOLD=Color.rgb(229,181,76);
+  ArrayList<ArrayList<View>> navRows=new ArrayList<ArrayList<View>>(); int navRow=0,navCol=0; LinearLayout list; ServerSocket listener; volatile boolean enabled=false; String pin; String page=""; int failedAttempts=0; long lockUntil=0L; final int GOLD=Color.rgb(229,181,76);
   @Override public void onCreate(Bundle b){super.onCreate(b);pin=String.format(Locale.US,"%06d",new SecureRandom().nextInt(1000000));home();}
 
   final int BG=Color.rgb(12,10,11), PANEL=Color.rgb(34,27,25), MUTED=Color.rgb(189,164,137);
@@ -46,7 +46,7 @@ public class MainActivity extends Activity {
     HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);
     scroll.setClipToPadding(false);LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
     row.setPadding(dp(6),dp(5),dp(6),dp(10));scroll.addView(row);
-    parent.addView(scroll,new LinearLayout.LayoutParams(-1,-2));return row;
+    parent.addView(scroll,new LinearLayout.LayoutParams(-1,-2));navRows.add(new ArrayList<View>());return row;
   }
   View tile(String title,Drawable icon,Runnable open){
     LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setGravity(Gravity.CENTER);
@@ -63,12 +63,12 @@ public class MainActivity extends Activity {
       v.setBackground(shape(focused?Color.rgb(112,79,38):Color.rgb(62,44,33),focused?Color.rgb(56,38,28):Color.rgb(28,24,23),20,focused));
       v.animate().scaleX(focused?1.055f:1f).scaleY(focused?1.055f:1f).setDuration(140).setInterpolator(new DecelerateInterpolator()).start();
       caption.setTextColor(focused?GOLD:Color.WHITE);
-      if(focused)v.bringToFront();
+      if(focused){v.bringToFront();updateSelection(v);}
     });
     card.setOnClickListener(v->open.run());card.setLayoutParams(box);return card;
   }
   Drawable symbol(int res){return getResources().getDrawable(res);}
-  void quick(LinearLayout row,String title,int icon,Runnable action){row.addView(tile(title,symbol(icon),action));}
+  void quick(LinearLayout row,String title,int icon,Runnable action){View v=tile(title,symbol(icon),action);row.addView(v);navRows.get(navRows.size()-1).add(v);}
   List<ResolveInfo> installed(){
     PackageManager pm=getPackageManager();Intent query=new Intent(Intent.ACTION_MAIN);
     query.addCategory(Intent.CATEGORY_LAUNCHER);
@@ -90,10 +90,10 @@ public class MainActivity extends Activity {
     for(int i=first;i<Math.min(last,all.size());i++){
       ResolveInfo a=all.get(i);final String pkg=a.activityInfo.packageName;
       Drawable image=null;try{image=a.loadIcon(pm);}catch(Exception ignored){}
-      row.addView(tile(String.valueOf(a.loadLabel(pm)),image,()->{
+      View tileView=tile(String.valueOf(a.loadLabel(pm)),image,()->{
         Intent go=pm.getLaunchIntentForPackage(pkg);
         if(go!=null)launch(go);
-      }));
+      });row.addView(tileView);navRows.get(navRows.size()-1).add(tileView);
     }
   }
 
@@ -186,6 +186,7 @@ public class MainActivity extends Activity {
     scroll.post(()->{if(dock.getChildCount()>0)dock.getChildAt(0).requestFocus();});
   }
   void apps(){
+    navRows.clear();navRow=0;navCol=0;
     LinearLayout root=pageRoot("APPLICATIONS");
     ScrollView sc=new ScrollView(this);LinearLayout body=new LinearLayout(this);body.setOrientation(1);
     List<ResolveInfo> all=installed();labelRow(body,"كل التطبيقات  •  All Apps");
@@ -196,6 +197,47 @@ public class MainActivity extends Activity {
         LinearLayout row=(LinearLayout)h.getChildAt(0);if(row.getChildCount()>0)row.getChildAt(0).requestFocus();
       });
     }}
+  }
+  void updateSelection(View focused){
+    for(int r=0;r<navRows.size();r++){int c=navRows.get(r).indexOf(focused);
+      if(c>=0){navRow=r;navCol=c;return;}}
+  }
+  boolean moveSelection(int direction){
+    if(navRows.size()==0)return false;
+    View current=getCurrentFocus();if(current!=null)updateSelection(current);
+    if(navRow>=navRows.size())navRow=navRows.size()-1;
+    int targetRow=navRow,targetCol=navCol;
+    if(direction==View.FOCUS_RIGHT)targetCol++;
+    else if(direction==View.FOCUS_LEFT)targetCol--;
+    else if(direction==View.FOCUS_DOWN)targetRow++;
+    else if(direction==View.FOCUS_UP)targetRow--;
+    else return false;
+    if(targetRow<0||targetRow>=navRows.size())return false;
+    ArrayList<View> destination=navRows.get(targetRow);
+    if(destination.isEmpty())return false;
+    if(targetCol<0||targetCol>=destination.size()){
+      // Stay in the current row at its end rather than jumping unpredictably.
+      if(direction==View.FOCUS_LEFT||direction==View.FOCUS_RIGHT)return true;
+      targetCol=Math.max(0,Math.min(targetCol,destination.size()-1));
+    }
+    View target=destination.get(targetCol);navRow=targetRow;navCol=targetCol;
+    target.requestFocus();
+    // Explicitly scroll newly focused tiles into view on Android 4.4.4 TVs.
+    target.post(()->{
+      android.graphics.Rect rect=new android.graphics.Rect(0,0,target.getWidth(),target.getHeight());
+      target.requestRectangleOnScreen(rect,false);
+    });
+    return true;
+  }
+  @Override public boolean onKeyDown(int keyCode,android.view.KeyEvent event){
+    if(page.equals("HOME")||page.equals("APPLICATIONS")){
+      int d=keyCode==KeyEvent.KEYCODE_DPAD_RIGHT?View.FOCUS_RIGHT:
+        keyCode==KeyEvent.KEYCODE_DPAD_LEFT?View.FOCUS_LEFT:
+        keyCode==KeyEvent.KEYCODE_DPAD_UP?View.FOCUS_UP:
+        keyCode==KeyEvent.KEYCODE_DPAD_DOWN?View.FOCUS_DOWN:0;
+      if(d!=0&&moveSelection(d))return true;
+    }
+    return super.onKeyDown(keyCode,event);
   }
   void files(File folder){screen("Files: "+folder.getAbsolutePath());File parent=folder.getParentFile();if(parent!=null)button(".. Back folder",()->files(parent));File[] entries=folder.listFiles();if(entries==null)return;Arrays.sort(entries,(a,b)->a.getName().compareToIgnoreCase(b.getName()));int n=0;for(File f:entries){if(n++>150)break;button((f.isDirectory()?"[DIR] ":"[FILE] ")+f.getName(),()->{if(f.isDirectory())files(f);else{Intent i=new Intent(Intent.ACTION_VIEW);String nm=f.getName().toLowerCase(Locale.US);String mime=nm.endsWith(".apk")?"application/vnd.android.package-archive":nm.endsWith(".mp4")?"video/mp4":nm.endsWith(".mp3")?"audio/mpeg":"*/*";i.setDataAndType(Uri.fromFile(f),mime);try{startActivity(i);}catch(Exception e){Toast.makeText(this,"No compatible app",0).show();}}});}}
   void settings(){screen("Settings");button("Wi-Fi",()->launch(new Intent(Settings.ACTION_WIFI_SETTINGS)));button("Display",()->launch(new Intent(Settings.ACTION_DISPLAY_SETTINGS)));button("Sound",()->launch(new Intent(Settings.ACTION_SOUND_SETTINGS)));button("Android Settings",()->launch(new Intent(Settings.ACTION_SETTINGS)));button("Back to HOME",this::home);}
@@ -231,7 +273,7 @@ public class MainActivity extends Activity {
   synchronized void stopServer(){enabled=false;try{if(listener!=null)listener.close();}catch(Exception ignored){}}
   void serve(Socket c)throws Exception{c.setSoTimeout(2500);if(System.currentTimeMillis()<lockUntil){reply(c,429,"{\"error\":\"try_later\"}");return;}BufferedReader reader=new BufferedReader(new InputStreamReader(c.getInputStream(),"UTF-8"));String first=reader.readLine();if(first==null||first.length()>200)return;boolean authorized=false;int length=0;for(int n=0;n<32;n++){String l=reader.readLine();if(l==null||l.isEmpty())break;if(l.length()>1024)return;String lower=l.toLowerCase(Locale.US);if(lower.startsWith("x-haider-token:"))authorized=l.substring(l.indexOf(':')+1).trim().equals(pin);if(lower.startsWith("content-length:"))try{length=Integer.parseInt(l.substring(l.indexOf(':')+1).trim());}catch(Exception ignored){}}if(!first.startsWith("POST /command ")||!authorized||length<1||length>256){failedAttempts++;if(failedAttempts>=5){lockUntil=System.currentTimeMillis()+60000;failedAttempts=0;}reply(c,401,"{\"error\":\"unauthorized\"}");return;}failedAttempts=0;char[] body=new char[length];int got=0;while(got<length){int k=reader.read(body,got,length-got);if(k<0)break;got+=k;}String input=new String(body,0,got).toUpperCase(Locale.US);String cmd=null;for(String k:new String[]{"UP","DOWN","LEFT","RIGHT","OK","BACK","HOME","VOLUME_UP","VOLUME_DOWN"})if(input.matches("(?s).*\\\"KEY\\\"\\s*:\\s*\\\""+k+"\\\".*")){cmd=k;break;}if(cmd==null){reply(c,400,"{\"error\":\"invalid\"}");return;}final String action=cmd;runOnUiThread(()->perform(action));reply(c,200,"{\"ok\":true}");}
   void reply(Socket c,int status,String data)throws Exception{byte[] b=data.getBytes("UTF-8");c.getOutputStream().write(("HTTP/1.1 "+status+" OK\r\nContent-Type: application/json\r\nContent-Length: "+b.length+"\r\nConnection: close\r\n\r\n").getBytes("US-ASCII"));c.getOutputStream().write(b);}
-  void perform(String key){if(key.equals("HOME"))home();else if(key.equals("BACK"))onBackPressed();else if(key.equals("VOLUME_UP")||key.equals("VOLUME_DOWN")){android.media.AudioManager a=(android.media.AudioManager)getSystemService(AUDIO_SERVICE);a.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,key.equals("VOLUME_UP")?1:-1,android.media.AudioManager.FLAG_SHOW_UI);}else if(key.equals("OK")){View v=getCurrentFocus();if(v!=null)v.performClick();}else{int d=key.equals("UP")?View.FOCUS_UP:key.equals("DOWN")?View.FOCUS_DOWN:key.equals("LEFT")?View.FOCUS_LEFT:View.FOCUS_RIGHT;View v=getCurrentFocus();if(v==null&&list.getChildCount()>0)list.getChildAt(0).requestFocus();else if(v!=null){View next=v.focusSearch(d);if(next!=null)next.requestFocus();}}}
+  void perform(String key){if(key.equals("HOME"))home();else if(key.equals("BACK"))onBackPressed();else if(key.equals("VOLUME_UP")||key.equals("VOLUME_DOWN")){android.media.AudioManager a=(android.media.AudioManager)getSystemService(AUDIO_SERVICE);a.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,key.equals("VOLUME_UP")?1:-1,android.media.AudioManager.FLAG_SHOW_UI);}else if(key.equals("OK")){View v=getCurrentFocus();if(v!=null)v.performClick();}else{int d=key.equals("UP")?View.FOCUS_UP:key.equals("DOWN")?View.FOCUS_DOWN:key.equals("LEFT")?View.FOCUS_LEFT:View.FOCUS_RIGHT;if((page.equals("HOME")||page.equals("APPLICATIONS"))&&moveSelection(d))return;View v=getCurrentFocus();if(v==null){if(list!=null&&list.getChildCount()>0)list.getChildAt(0).requestFocus();}else{View next=v.focusSearch(d);if(next!=null)next.requestFocus();}}}
   @Override public void onBackPressed(){if(!page.equals("HOME"))home();else super.onBackPressed();}
   @Override protected void onDestroy(){stopServer();super.onDestroy();}
 }
